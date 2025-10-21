@@ -35,33 +35,6 @@
 <!-- 顯示列表 -->
 <div id="list"></div>
 
-<!-- 留言板浮動小圖示 -->
-<div id="chatToggle" style="
-    position:fixed; bottom:20px; right:20px;
-    width:50px; height:50px;
-    background:#007bff; color:#fff; border-radius:50%;
-    display:flex; align-items:center; justify-content:center;
-    cursor:pointer; z-index:9999;">
-  💬
-</div>
-
-<!-- 留言板主視窗（預設隱藏） -->
-<div id="chatBox" style="
-    position:fixed; bottom:20px; right:20px;
-    width:300px; height:300px;
-    border:1px solid #aaa; background:#fff;
-    border-radius:8px;
-    display:none; flex-direction:column; resize:both; overflow:auto; z-index:9998;">
-  <div style="display:flex; justify-content:space-between; background:#eee; padding:5px; cursor:move;">
-    <span>留言板</span>
-    <button id="chatClose">✖</button>
-  </div>
-  <div id="chatMessages" style="flex:1; padding:5px; overflow:auto;"></div>
-  <div style="display:flex; border-top:1px solid #ddd;">
-    <input id="chatInput" placeholder="輸入留言..." style="flex:1; border:none; padding:5px;">
-    <button id="chatSend">送出</button>
-  </div>
-</div>
 
 <script>
   // 🔸 初始化 Firebase
@@ -154,40 +127,6 @@
       el.textContent=`${H}:${M}:${S}`;
     });
   },1000);
-
-  // 💬 留言板
-  const chatBox = document.getElementById('chatBox');
-  const chatToggle = document.getElementById('chatToggle');
-  const chatClose = document.getElementById('chatClose');
-  const chatMsg = document.getElementById('chatMessages');
-  const chatInput = document.getElementById('chatInput');
-  const chatSend = document.getElementById('chatSend');
-
-  const currentName = ()=>nameInput.value.trim()||'匿名';
-
-  chatToggle.onclick = ()=>{chatBox.style.display='flex'; chatToggle.style.display='none';};
-  chatClose.onclick = ()=>{chatBox.style.display='none'; chatToggle.style.display='flex';};
-
-  chatSend.onclick = ()=>{
-    const text = chatInput.value.trim();
-    if(!text) return;
-    db.ref('messages').push({name:currentName(), text, timestamp:Date.now()});
-    chatInput.value='';
-  };
-
-  db.ref('messages').on('value', snap=>{
-    const msgs = snap.val()||{};
-    chatMsg.innerHTML='';
-    Object.values(msgs)
-      .sort((a,b)=>a.timestamp-b.timestamp)
-      .forEach(m=>{
-        const p=document.createElement('div');
-        const t = new Date(m.timestamp).toLocaleTimeString();
-        p.textContent=`[${t}] ${m.name}: ${m.text}`;
-        chatMsg.appendChild(p);
-      });
-    chatMsg.scrollTop = chatMsg.scrollHeight;
-  });
 </script>
 </body>
 </html>
