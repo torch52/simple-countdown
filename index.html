@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>共享下班倒數</title>
+  <style>
+    body { font-family: sans-serif; padding: 1rem; }
+    #form { margin-bottom: 1rem; }
+    #list { margin-top: 1rem; }
+    .item { padding: 0.5rem; border-bottom: 1px solid #ddd; }
+    .name { font-weight: bold; }
+    .timer { float: right; }
+  </style>
+  <!-- 1. 載入 Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+</head>
+<body>
+<h1>共享下班倒數</h1>
+
+<!-- 管理區 -->
+<div id="adminArea" style="margin-bottom:1rem;">
+  <input type="password" id="adminPwd" placeholder="管理密碼" />
+  <button id="adminLogin">登入管理員</button>
+</div>
+
+<!-- 報到表單 -->
+<div id="form">
+  <input type="text" id="yourName" placeholder="請輸入姓名" />
+  <input type="time" id="yourStart" value="08:00" />
+  <button id="btnGo">我要報到</button>
+</div>
+
+<!-- 顯示列表 -->
+<div id="list"></div>
+
+<!-- 留言板浮動小圖示 -->
+<div id="chatToggle" style="
+    position:fixed; bottom:20px; right:20px;
+    width:50px; height:50px;
+    background:#007bff; color:#fff; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; z-index:9999;">
+  💬
+</div>
+
+<!-- 留言板主視窗（預設隱藏） -->
+<div id="chatBox" style="
+    position:fixed; bottom:20px; right:20px;
+    width:300px; height:300px;
+    border:1px solid #aaa; background:#fff;
+    border-radius:8px;
+    display:none; flex-direction:column; resize:both; overflow:auto; z-index:9998;">
+  <div style="display:flex; justify-content:space-between; background:#eee; padding:5px; cursor:move;">
+    <span>留言板</span>
+    <button id="chatClose">✖</button>
+  </div>
+  <div id="chatMessages" style="flex:1; padding:5px; overflow:auto;"></div>
+  <div style="display:flex; border-top:1px solid #ddd;">
+    <input id="chatInput" placeholder="輸入留言..." style="flex:1; border:none; padding:5px;">
+    <button id="chatSend">送出</button>
+  </div>
+</div>
+
+<script>
+  // 🔸 初始化 Firebase
+  const firebaseConfig = {
+    apiKey: "AIzaSyB8lK1b6nx2hunGNwHutpBCO-BeKO5XntQ",
+    authDomain: "countdown-11b34.firebaseapp.com",
+    databaseURL: "https://countdown-11b34-default-rtdb.firebaseio.com",
+    projectId: "countdown-11b34",
+    storageBucket: "countdown-11b34.appspot.com",
+    messagingSenderId: "338264464503",
+    appId: "1:338264464503:web:507ef5a71113162a91fa72",
+    measurementId: "G-TE12G16JLZ"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  const WORK_MS  = 8 * 3600 * 1000;
+  const BREAK_MS = 1 * 3600 * 1000;
+  const ADMIN_PWD = "admin123";
+  let isAdmin = false;
+
+  // 自動記住姓名
+  const nameInput = document.getElementById('yourName');
+  const savedName = localStorage.getItem('userName');
+  if(savedName) nameInput.value = savedName;
+  nameInput.addEventListener('input', ()=>{localStorage.setItem('userName', nameInput.value.trim());});
+
+  // 報到
+  document.getElementById('btnGo').onclick = ()=>{
+    const name = nameInput.value.trim();
+    const start = document.getElementById('yourStart').value;
+    if(!name || !start) return alert('請輸入姓名及上班時間');
+    const key = name.replace(/\s+/g,'_');
+    db.ref('checkin/'+key).set({name, startTime:start, timestamp:Date.now()});
+    localStorage.setItem('userName', name);
+  };
+
+  // 管理員登入
+  document.getElementById('adminLogin').onclick = ()=>{
+    const val = document.getElementById('adminPwd').value;
+    if(val===ADMIN_PWD){
+      isAdmin = true;
+      alert('管理員登入成功');
+      renderList();
+    }else alert('密碼錯誤');
+  };
+
+  // 顯示名單
+  const listEl = document.getElementById('list');
+  db.ref('checkin').on('value', snap=>{
+    window.currentData = snap.val() || {};
+    renderList();
+  });
+
+  function renderList(){
+    const data = window.currentData || {};
+    listEl.innerHTML = '';
+    Object.values(data)
+      .sort((a,b)=> a.name.localeCompare(b.name))
+      .forEach(item=>{
+        const div = document.createElement('div');
+        div.className='item';
+        const key = item.name.replace(/\s+/g,'_');
+        div.innerHTML=`
+          <span class="name">${item.name}</span>
+          <span class="timer" data-start="${item.startTime}" data-key="${key}">--:--:--</span>
+          ${isAdmin?`<button class="delBtn" data-key="${key}">刪除</button>`:''}
+        `;
+        listEl.appendChild(div);
+      });
+    if(isAdmin){
+      document.querySelectorAll('.delBtn').forEach(btn=>{
+        btn.onclick = ()=>db.ref('checkin/'+btn.dataset.key).remove();
+      });
+    }
+  }
+
+  // 倒數與自動刪除
+  setInterval(()=>{
+    document.querySelectorAll('.timer').forEach(el=>{
+      const now = new Date();
+      const [hh,mm] = el.dataset.start.split(':').map(n=>parseInt(n));
+      const dtStart = new Date(); dtStart.setHours(hh,mm,0,0);
+      let dtEnd = new Date(dtStart.getTime()+WORK_MS+BREAK_MS);
+      if(now>dtEnd){db.ref('checkin/'+el.dataset.key).remove(); return;}
+      const diff = dtEnd-now;
+      const H = String(Math.floor(diff/1000/3600)).padStart(2,'0');
+      const M = String(Math.floor(diff/1000/60%60)).padStart(2,'0');
+      const S = String(Math.floor(diff/1000%60)).padStart(2,'0');
+      el.textContent=`${H}:${M}:${S}`;
+    });
+  },1000);
+
+  // 💬 留言板
+  const chatBox = document.getElementById('chatBox');
+  const chatToggle = document.getElementById('chatToggle');
+  const chatClose = document.getElementById('chatClose');
+  const chatMsg = document.getElementById('chatMessages');
+  const chatInput = document.getElementById('chatInput');
+  const chatSend = document.getElementById('chatSend');
+
+  const currentName = ()=>nameInput.value.trim()||'匿名';
+
+  chatToggle.onclick = ()=>{chatBox.style.display='flex'; chatToggle.style.display='none';};
+  chatClose.onclick = ()=>{chatBox.style.display='none'; chatToggle.style.display='flex';};
+
+  chatSend.onclick = ()=>{
+    const text = chatInput.value.trim();
+    if(!text) return;
+    db.ref('messages').push({name:currentName(), text, timestamp:Date.now()});
+    chatInput.value='';
+  };
+
+  db.ref('messages').on('value', snap=>{
+    const msgs = snap.val()||{};
+    chatMsg.innerHTML='';
+    Object.values(msgs)
+      .sort((a,b)=>a.timestamp-b.timestamp)
+      .forEach(m=>{
+        const p=document.createElement('div');
+        const t = new Date(m.timestamp).toLocaleTimeString();
+        p.textContent=`[${t}] ${m.name}: ${m.text}`;
+        chatMsg.appendChild(p);
+      });
+    chatMsg.scrollTop = chatMsg.scrollHeight;
+  });
+</script>
+</body>
+</html>
+
